@@ -47,6 +47,8 @@ public class XcodeProjectUpdater : MonoBehaviour
 		proj.ReadFromString(File.ReadAllText(projPath));
 		
 		string target = proj.TargetGuidByName("Unity-iPhone");
+//		string debugConfig = proj.BuildConfigByName(target, "Debug");
+//		string releaseConfig = proj.BuildConfigByName(target, "Release");
 
 		// Add custom system frameworks. Duplicate frameworks are ignored.
 		// needed by our native plugin in Assets/Plugins/iOS
@@ -64,6 +66,7 @@ public class XcodeProjectUpdater : MonoBehaviour
 		proj.SetBuildProperty(target, "FRAMEWORK_SEARCH_PATHS", "$(inherited)");
 		proj.AddBuildProperty(target, "FRAMEWORK_SEARCH_PATHS", "$(PROJECT_DIR)/Frameworks");
 //		proj.AddBuildProperty(target, "OTHER_LDFLAGS", "-ObjC");
+		proj.AddBuildProperty(target, "GCC_ENABLE_OBJC_EXCEPTIONS", "YES");
 
 		File.WriteAllText(projPath, proj.WriteToString());
 
