@@ -1,0 +1,152 @@
+#!/usr/bin/env ruby
+
+require 'xcodeproj'
+require 'fileutils'
+require 'logger'
+
+PROJECT = 'Unity-iPhone'
+TARGET = 'Unity-iPhone'
+LIBRARY = 'Libraries'
+
+# システムFramework追加
+def add_frameworks(project, names, optional = false)
+  project.targets.each do |target|
+    next unless TARGET == target.name
+
+    build_phase = target.frameworks_build_phase
+    framework_group = project.frameworks_group
+
+    names.each do |name|
+      next if exist_framework?(build_phase, name)
+
+      path = "System/Library/Frameworks/#{name}.framework"
+      file_ref = framework_group.new_reference(path)
+      file_ref.name = "#{name}.framework"
+      file_ref.source_tree = 'SDKROOT'
+      build_file = build_phase.add_file_reference(file_ref)
+      if optional
+        build_file.settings = { 'ATTRIBUTES' => ['Weak'] }
+      end
+    end
+  end
+end
+
+# 外部Framework追加
+def add_external_frameworks(project, names)
+  project.targets.each do |target|
+    next unless TARGET == target.name
+
+    target.build_configurations.each do |configuration|
+      # Framework Search Pathsを設定
+      configuration.build_settings['FRAMEWORK_SEARCH_PATHS'] = configuration.build_settings['LIBRARY_SEARCH_PATHS']
+    end
+
+    build_phase = target.frameworks_build_phase
+    library_group = project.main_group.children.find {|child| child.path == LIBRARY}
+
+    names.each do |name|
+      next if exist_framework?(build_phase, name)
+
+      copy_library(name)
+
+      path = "#{LIBRARY}/#{name}.framework"
+      file_ref = library_group.new_reference(path)
+      file_ref.name = "#{name}.framework"
+      file_ref.source_tree = 'SOURCE_ROOT'
+      build_phase.add_file_reference(file_ref)
+    end
+  end
+end
+
+# Framework追加済みか
+def exist_framework?(build_phase, name)
+  build_phase.files.each do |file|
+    return true if file.file_ref.name == "#{name}.framework"
+  end
+  false
+end
+
+# 外部FrameworkをUnityのディレクトリからXcodeのディレクトリへコピー
+def copy_library(name)
+  asset_path = "#{ARGV[0]}/../Assets"
+  from = File.expand_path("#{asset_path}/Editor/iOS/#{LIBRARY}/#{name}.framework", __FILE__)
+  to = "#{ARGV[0]}/#{LIBRARY}/#{name}.framework"
+  FileUtils.copy_entry(from, to)
+end
+
+# システムdylib追加
+def add_dylib(project, names, optional = false)
+  project.targets.each do |target|
+    next unless TARGET == target.name
+
+    build_phase = target.frameworks_build_phase
+    framework_group = project.frameworks_group
+
+    names.each do |name|
+      next if exist_dylib?(build_phase, name)
+
+      path = "usr/lib/#{name}.dylib"
+      file_ref = framework_group.new_reference(path)
+      file_ref.name = "#{name}.dylib"
+      file_ref.source_tree = 'SDKROOT'
+      build_file = build_phase.add_file_reference(file_ref)
+      if optional
+        build_file.settings = { 'ATTRIBUTES' => ['Weak'] }
+      end
+    end
+  end
+end
+
+# dylib追加済みか
+def exist_dylib?(build_phase, name)
+  build_phase.files.each do |file|
+    return true if file.file_ref.name == "#{name}.dylib"
+  end
+  false
+end
+
+# Build Settings
+def config_build_settings(project, name, flag)
+  project.targets.each do |target|
+    next unless TARGET == target.name
+    target.build_configurations.each do |configuration|
+      configuration.build_settings[name] = flag
+    end
+  end
+end
+
+### ===================================================
+
+
+project_path = ARGV[0] + "/#{PROJECT}.xcodeproj"
+project = Xcodeproj::Project.new(project_path)
+
+project.initialize_from_file
+
+### Framework の自動追加 ###
+# require で追加
+# add_frameworks(project, ["", ""])
+# optional で追加
+# add_frameworks(project, ["", ""], true)
+# 外部 Framework の追加
+# 事前に Assets/Editor/iOS/Libraries にファイルを置いておく
+# add_external_frameworks(project, [""])
+
+### dylib の自動追加 ###
+add_dylib(project, ["libsqlite3.0", "libz"])
+
+### Build Settings の自動設定 ###
+config_build_settings(project, "GCC_ENABLE_OBJC_EXCEPTIONS","YES")
+
+### URL Scheme の設定 ###
+plist = "#{ARGV[0]}/Info.plist"
+app_identifier = "my.bundle.id"
+app_scheme = "myscheme"
+system("/usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' #{plist}")
+system("/usr/libexec/PlistBuddy -c 'Add CFBundleURLTypes:0:CFBundleURLName string app_identifier' #{plist}")
+system("/usr/libexec/PlistBuddy -c 'Add CFBundleURLTypes:0:CFBundleURLSchemes array' #{plist}")
+system("/usr/libexec/PlistBuddy -c 'Add CFBundleURLTypes:0:CFBundleURLSchemes:0 string #{app_scheme}' #{plist}")
+
+
+### 設定の保存 ###
+project.save
